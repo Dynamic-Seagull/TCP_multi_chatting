@@ -36,7 +36,10 @@
 - userList.txt
 - CMakeLists.txt
 ```
-git clone https://github.com/Dynamic-Seagull/TCP_multi_chatting/server
+git clone https://github.com/Dynamic-Seagull/TCP_multi_chatting.git
+cd TCP_multi_chatting
+rm -rf client
+rm -f README.md
 cmake CMakeLists.txt
 make
 ./tcp_server
@@ -47,7 +50,10 @@ make
 - tcp_client.c
 - CMakeLists.txt
 ```
-git clone https://github.com/Dynamic-Seagull/TCP_multi_chatting/client
+git clone https://github.com/Dynamic-Seagull/TCP_multi_chatting.git
+cd TCP_multi_chatting
+rm -rf server
+rm -f README.md
 cmake CMakeLists.txt
 make
 ./tcp_client [server ip address]

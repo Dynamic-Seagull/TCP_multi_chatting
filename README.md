@@ -1,6 +1,6 @@
 # TCP 통신을 이용한 다중 채팅 프로그램
-## 본 코드는 VEDA 1기 미니 프로젝트 과제용으로 작성되었습니다.
-### 자세한 정보는 : https://dynamicseagull.tistory.com/123
+- 본 코드는 VEDA 1기 미니 프로젝트 과제용으로 작성되었습니다.
+- 자세한 정보는 : https://dynamicseagull.tistory.com/123
 
 ---
 

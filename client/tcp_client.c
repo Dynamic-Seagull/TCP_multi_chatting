@@ -6,48 +6,60 @@
 #include <sys/socket.h>
 
 #define TCP_PORT 5100
-#define BUF_SIZE 1024
+#define BUFSIZE 1024
 
-void error_handling(const char *message);
-
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) 
+{
     int sock;
-    struct sockaddr_in serv_addr;
-    char msg[BUF_SIZE];
-    int str_len;
+    struct sockaddr_in saddr;
+    char msg[BUFSIZE];
+    int slen;
 
-    if (argc != 2) {
+    if (argc != 2) 
+    {
         printf("Usage : %s <IP>\n", argv[0]);
         return -1;
     }
 
     sock = socket(PF_INET, SOCK_STREAM, 0);
     if (sock == -1)
-        error_handling("socket() error");
+        {
+            perror("socket() error");
+            exit(1);
+        }
 
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    inet_pton(AF_INET, argv[1], &serv_addr.sin_addr);
-    serv_addr.sin_port = htons(TCP_PORT);
+    memset(&saddr, 0, sizeof(saddr));
+    saddr.sin_family = AF_INET;
+    inet_pton(AF_INET, argv[1], &saddr.sin_addr);
+    saddr.sin_port = htons(TCP_PORT);
     
-    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1)
-        error_handling("connect() error");
+    if (connect(sock, (struct sockaddr*)&saddr, sizeof(saddr)) == -1)
+    {
+        perror("connect() error");
+        exit(1);
+    }
 
     pid_t pid = fork();
-    if (pid == 0) {  // 자식 프로세스: 서버에서 메시지 수신
-        while (1) {
-            str_len = read(sock, msg, BUF_SIZE - 1);
-            if (str_len <= 0)
+    if (pid == 0) 
+    {  // 자식 프로세스 - 서버에서 메시지 수신
+        while (1) 
+        {
+            slen = read(sock, msg, BUFSIZE - 1);
+            if (slen <= 0)
                 break;
-            msg[str_len] = 0;
-            printf("Message from server: %s", msg);
+            msg[slen] = '\0';
+            printf("%s\n", msg);
         }
         close(sock);
         return 0;
-    } else {  // 부모 프로세스: 서버로 메시지 전송
-        while (1) {
-            fgets(msg, BUF_SIZE, stdin);
-            if (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n")) {
+    } 
+    else 
+    {  // 부모 프로세스 - 서버로 메시지 전송
+        while (1) 
+        {
+            fgets(msg, BUFSIZE, stdin);
+            if (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n")) 
+            {
                 close(sock);
                 break;
             }
@@ -55,9 +67,4 @@ int main(int argc, char *argv[]) {
         }
     }
     return 0;
-}
-
-void error_handling(const char *message) {
-    perror(message);
-    exit(1);
 }

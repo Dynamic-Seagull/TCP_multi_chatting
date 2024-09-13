@@ -8,84 +8,127 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <termios.h>
 
 #define TCP_PORT 5100
-#define BUF_SIZE 1024
+#define BUFSIZE 1024
 #define MAX_CLIENTS 50
 
-int client_pipes[MAX_CLIENTS][2];  // 파이프 배열 (클라이언트 수만큼 생성)
-int client_socks[MAX_CLIENTS];     // 클라이언트 소켓 배열
-int client_count = 0;              // 현재 접속한 클라이언트 수
+int client_pipes[MAX_CLIENTS][2];  // 파이프 배열
+int client_socks[MAX_CLIENTS];
+int client_count = 0;
 
-void error_handling(const char *message) {
-    perror(message);
-    exit(1);
+int login(char idpw[])
+{
+    // 회원여부 확인
+    // id와 pw가 합쳐진 문자열이 txt 파일에 저장되어있음 (pw+id 순서)
+    FILE* fp;
+    fp = fopen("userList.txt", "r");
+    if (fp == NULL)
+    {
+        printf("userList Not found.\n");
+        return 0;
+    }
+    printf("id check start\n");
+    while (!feof(fp))
+    {
+        char check[100];
+        char *ps = fgets(check, sizeof(check), fp);
+        check[strlen(check) - 1] = '\0';
+        if (!(strcmp(check, idpw)))
+        {
+            printf("login success!\n");
+            fclose(fp);
+            return 0;
+        }
+    }
+    printf("login fail\n");
+
+    fclose(fp);
+    return -1;
 }
 
-void handler(int signo) {
+void rgst(char nidpw[])
+{
+    //회원 등록
+    FILE* fp;
+    fp = fopen("userList.txt", "a");
+    if (fp == NULL)
+    {
+        printf("userList Not found.\n");
+        return;
+    }
+    
+    fputs(nidpw, fp);
+    fputs("\n", fp);
+    fclose(fp);
+}
+
+void handler(int signo) 
+{
     while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
-void broadcast_message(int sender_index, char *message) {
-    // 모든 클라이언트에게 메시지 전송 (sender_index는 송신자 인덱스, 송신자 제외)
-    for (int i = 0; i < client_count; i++) {
-        if (i != sender_index) {  // 송신자 제외
+void broadcast_message(int sender_index, char *message, char *id) 
+{
+    //발신자 제외 모든 클라이언트에게 메시지 전송
+    for (int i = 0; i < client_count; i++) 
+    {
+        if (i != sender_index) 
+        {
             write(client_socks[i], message, strlen(message));
         }
     }
 }
 
-void daemonize() {
+void daemonize() //데몬 프로세스
+{
     pid_t pid;
 
-    // 1. 부모 프로세스 종료
     pid = fork();
-    if (pid < 0) {
+    if (pid < 0) 
         exit(EXIT_FAILURE);
-    }
-    if (pid > 0) {
-        exit(EXIT_SUCCESS);  // 부모 프로세스 종료
-    }
+    if (pid > 0) 
+        exit(EXIT_SUCCESS);
 
-    // 2. 세션 리더가 되기
-    if (setsid() < 0) {
+    if (setsid() < 0) 
         exit(EXIT_FAILURE);
-    }
 
-    // 3. 표준 입출력 닫기
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
     close(STDERR_FILENO);
 
-    // 4. 파일 디스크립터 리다이렉트 (로그 파일로 연결해도 됨)
     int fd = open("/dev/null", O_RDWR);
-    if (fd != -1) {
+    if (fd != -1) 
+    {
         dup2(fd, STDIN_FILENO);
         dup2(fd, STDOUT_FILENO);
         dup2(fd, STDERR_FILENO);
-        if (fd > 2) {
+        if (fd > 2) 
             close(fd);
-        }
     }
 
-    // 5. 루트 디렉토리로 이동
-    if (chdir("/") < 0) {
+    if (chdir("/") < 0) 
         exit(EXIT_FAILURE);
-    }
 
-    // 6. 파일 권한 마스크 설정
     umask(0);
 }
 
-int main() {
-    int serv_sock, clnt_sock;
-    struct sockaddr_in serv_adr, clnt_adr;
-    socklen_t clnt_adr_sz;
+int main() 
+{
+    int ssock, csock;
+    struct sockaddr_in saddr, caddr;
+    socklen_t caddr_sz;
     struct sigaction act;
-    char msg[BUF_SIZE];
+    char msg[BUFSIZE];
     int i, n;
+    char id[20];
+    char pw[100];
+    char nid[20];
+    char npw[100];
 
-    // SIGCHLD 시그널 처리 (자식 프로세스 종료 처리)
+    // 자식프로세스 종료 시그널
     act.sa_handler = handler;
     sigemptyset(&act.sa_mask);
     act.sa_flags = 0;
@@ -95,77 +138,175 @@ int main() {
     daemonize();
 
     // 서버 소켓 생성
-    serv_sock = socket(PF_INET, SOCK_STREAM, 0);
-    if (serv_sock == -1)
-        error_handling("socket() error");
+    ssock = socket(PF_INET, SOCK_STREAM, 0);
+    if (ssock == -1)
+    {
+        perror("socket() error");
+        exit(1);
+    }
 
-    memset(&serv_adr, 0, sizeof(serv_adr));
-    serv_adr.sin_family = AF_INET;
-    serv_adr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serv_adr.sin_port = htons(TCP_PORT);
+    memset(&saddr, 0, sizeof(saddr));
+    saddr.sin_family = AF_INET;
+    saddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    saddr.sin_port = htons(TCP_PORT);
 
-    if (bind(serv_sock, (struct sockaddr*)&serv_adr, sizeof(serv_adr)) == -1)
-        error_handling("bind() error");
+    // bind() 오류 방지
+    int yes = 1;
+    if (setsockopt(ssock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) 
+    {
+        perror("setsockopt");
+        return 1;
+    } 
 
-    if (listen(serv_sock, 5) == -1)
-        error_handling("listen() error");
+    if (bind(ssock, (struct sockaddr*)&saddr, sizeof(saddr)) == -1)
+    {
+        perror("bind() error");
+        exit(1);
+    }
 
-    while (1) {
-        clnt_adr_sz = sizeof(clnt_adr);
-        clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_adr, &clnt_adr_sz);
+    if (listen(ssock, 5) == -1)
+    {
+        perror("listen() error");
+        exit(1);
+    }
 
-        if (clnt_sock == -1)
+    while (1) 
+    {
+        caddr_sz = sizeof(caddr);
+        csock = accept(ssock, (struct sockaddr*)&caddr, &caddr_sz);
+
+        if (csock == -1)
             continue;
 
-        if (client_count >= MAX_CLIENTS) {
+        if (client_count >= MAX_CLIENTS) 
+        {
             printf("Max clients reached. Rejecting connection.\n");
-            close(clnt_sock);
+            close(csock);
             continue;
         }
 
+        printf("New client connected: %d\n", client_count + 1);
+
         // 파이프 생성
-        if (pipe(client_pipes[client_count]) == -1) {
+        if (pipe(client_pipes[client_count]) == -1) 
+        {
             perror("pipe() error");
             exit(1);
         }
 
-        client_socks[client_count] = clnt_sock;  // 클라이언트 소켓 저장
+        client_socks[client_count] = csock;
 
         pid_t pid = fork();
-        if (pid == 0) {  // 자식 프로세스: 클라이언트와 통신
-            close(serv_sock);
+        if (pid == 0) 
+        {
+            close(ssock);
 
-            // 파이프의 읽기 끝을 닫고, 클라이언트 소켓을 통해 수신한 데이터를 파이프로 전송
+            while(1)
+            {
+                // 로그인 처리
+                write(client_socks[client_count], "ID (join - input 'new') : ", strlen("ID (join - input 'new') : "));
+                if ((n = read(csock, id, 20)) <= 0) 
+                {
+                    perror("Input your ID");
+                    close(client_socks[client_count]);
+                    exit(1);
+                }
+                id[n - 1] = '\0';
+
+                if (!(strcmp( id, "new")))
+                {
+                    // new 입력시 회원가입
+                    write(client_socks[client_count], "Input ID : ", strlen("Input ID : "));
+                    if ((n = read(csock, nid, 20)) <= 0) 
+                    {
+                        perror("Input your ID");
+                        close(client_socks[client_count]);
+                        exit(1);
+                    }
+                    printf("%s\n",nid);
+                    if ((strcmp(nid, "new") == 0))
+                    {
+                        printf("'new' is Not available.");
+                        exit(1);
+                    }
+                    nid[n - 1] = '\0';
+                    write(client_socks[client_count], "Password : ", strlen("Password : "));
+                    if ((n = read(csock, npw, 100)) <= 0) 
+                    {
+                        perror("Input your PW");
+                        close(client_socks[client_count]);
+                        exit(1);
+                    }
+                    npw[n - 1] = '\0';
+                    strcat(npw, nid);
+                    rgst(npw);
+                    write(client_socks[client_count], "please login again! \n", strlen("please login again! \n"));
+                    
+                    continue;
+                }
+
+                write(client_socks[client_count], "Password : ", strlen("Password : "));
+                if ((n = read(csock, pw, 100)) <= 0) 
+                {
+                    perror("read() password");
+                    close(client_socks[client_count]);
+                    exit(0);
+                }
+                pw[n - 1] = '\0';
+
+                strcat(pw, id);
+                if (login(pw) == 0) 
+                {
+                    write(client_socks[client_count], "Login successful!\nIf you want quit, Input 'q' or ' Q'\n", 
+                                    strlen("Login successful!\nIf you want quit, Input 'q' or ' Q'\n"));
+                    break;
+                } else 
+                {
+                    write(client_socks[client_count], "Login failed!\n", strlen("Login failed!\n"));
+                }
+            }
+            
+        
+            // 파이프 통신
             close(client_pipes[client_count][0]);
 
-            while ((n = read(clnt_sock, msg, BUF_SIZE)) > 0) {
+            while ((n = read(csock, msg, BUFSIZE)) > 0) 
+            {
                 msg[n] = '\0';
-                printf("Received from client %d: %s", client_count, msg);
+                printf("client %d [ %s ] : %s", client_count, id, msg);
+                
+                char setting1[1000] = "[ ";
+                char setting2[10] = " ] ";
+                strcat(setting1, id);
+                strcat(setting1, setting2);
+                strcat(setting1, msg);
+                strcpy(msg, setting1);
 
-                // 클라이언트의 메시지를 파이프로 서버 프로세스로 전송
+                // 클라이언트 -> 서버
                 write(client_pipes[client_count][1], msg, strlen(msg));
             }
 
-            close(clnt_sock);
+            close(csock);
             close(client_pipes[client_count][1]);
             exit(0);
         }
 
-        client_count++;  // 클라이언트 수 증가
+        client_count++;
 
-        // 부모 프로세스: 파이프에서 메시지 읽고 브로드캐스트
-        for (i = 0; i < client_count; i++) {
-            if (fork() == 0) {  // 자식 프로세스: 해당 클라이언트의 파이프 읽기
-                char buffer[BUF_SIZE];
+        // 부모 프로세스
+        for (i = 0; i < client_count; i++) 
+        {
+            if (fork() == 0) 
+            { 
+                char buffer[BUFSIZE];
 
-                close(client_pipes[i][1]);  // 쓰기 끝 닫기
+                close(client_pipes[i][1]);
 
-                while ((n = read(client_pipes[i][0], buffer, BUF_SIZE)) > 0) {
+                // 메세지 브로드캐스트
+                while ((n = read(client_pipes[i][0], buffer, BUFSIZE)) > 0) 
+                {
                     buffer[n] = '\0';
-                    printf("Broadcasting message from client %d: %s", i, buffer);
-                    
-                    // 브로드캐스트 메시지 전송 (해당 클라이언트 제외)
-                    broadcast_message(i, buffer);
+                    broadcast_message(i, buffer, id);
                 }
 
                 close(client_pipes[i][0]);
@@ -173,6 +314,6 @@ int main() {
             }
         }
     }
-    close(serv_sock);
+    close(ssock);
     return 0;
 }

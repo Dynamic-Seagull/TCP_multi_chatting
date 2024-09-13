@@ -32,7 +32,6 @@
 
 ### 서버 (server folder)
 - tcp_server.c
-- login.c
 - userList.txt
 - CMakeLists.txt
 ```
